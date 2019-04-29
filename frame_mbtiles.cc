@@ -176,8 +176,22 @@ void wxFrameBitmap::OnAbout(wxCommandEvent& WXUNUSED(event))
 void wxFrameBitmap::OnPaint(wxPaintEvent& WXUNUSED(event))
 {
   wxPaintDC dc(this);
-  tile_t tile = m_tiles.at(0);
-  dc.DrawBitmap(tile.bitmap, 0, 0, true);
+  int x = 0, y = 0, w = 256, h = 256, idx = 0;
+  for (size_t idx_col = 0; idx_col < 2; idx_col++)
+  {
+    y = 256;
+    for (size_t idx_row = 0; idx_row < 2; idx_row++)
+    {
+      tile_t tile = m_tiles.at(idx);
+      idx++;
+      dc.DrawBitmap(tile.bitmap, x, y, true);
+      w = tile.bitmap.GetWidth();
+      h = tile.bitmap.GetHeight();
+      y -= h;
+    }
+    x += w;
+  }
+
 }
 
 
@@ -278,8 +292,6 @@ int wxFrameBitmap::get_tiles(size_t zoom_level, size_t  tile_column, size_t tile
     fclose(fp);
     tile_t tile(zoom_level, tile_column, tile_row, wxBitmap::NewFromPNGData(blob, size_blob));
     m_tiles.push_back(tile);
-    const int w = tile.bitmap.GetWidth();
-    const int h = tile.bitmap.GetHeight();
   }
 
   sqlite3_finalize(stmt);
