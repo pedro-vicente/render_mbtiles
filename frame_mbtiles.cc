@@ -6,6 +6,25 @@
 #include <vector>
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
+//tile_t
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+class tile_t
+{
+public:
+  tile_t(size_t zoom_level_, size_t tile_column_, size_t tile_row_, wxBitmap bitmap_) :
+    zoom_level(zoom_level_),
+    tile_column(tile_column_),
+    tile_row(tile_row_),
+    bitmap(bitmap_)
+  {}
+  size_t zoom_level;
+  size_t tile_column;
+  size_t tile_row;
+  wxBitmap bitmap;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
 //wxAppBitmap
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -32,14 +51,16 @@ public:
   void OnQuit(wxCommandEvent& event);
   void OnAbout(wxCommandEvent& event);
   void OnPaint(wxPaintEvent& event);
-  wxBitmap m_bitmap;
+
 
   int get_tiles(size_t zoom_level, size_t  tile_column, size_t tile_row);
-  int get_tables(const std::string &file_name, std::vector<std::string> &tables);
+  int get_tables(const std::string &file_name);
   int get_metadata();
 
 private:
   sqlite3 *m_db;
+  std::vector<std::string> m_tables;
+  std::vector<tile_t> m_tiles;
 
 private:
   wxDECLARE_EVENT_TABLE();
@@ -88,8 +109,7 @@ wxFrameBitmap::wxFrameBitmap(const wxString& title)
 
   wxInitAllImageHandlers();
 
-  std::vector<std::string> tables;
-  if (get_tables("countries-raster.mbtiles", tables) < 0)
+  if (get_tables("countries-raster.mbtiles") < 0)
   {
 
   }
@@ -107,9 +127,9 @@ wxFrameBitmap::wxFrameBitmap(const wxString& title)
   //A typical `create` statement for the `tiles` table:
   //CREATE TABLE tiles(zoom_level integer, tile_column integer, tile_row integer, tile_data blob);
 
-  for (size_t idx = 0; idx < tables.size(); idx++)
+  for (size_t idx = 0; idx < m_tables.size(); idx++)
   {
-    wxLogDebug("%s", tables.at(idx));
+    wxLogDebug("%s", m_tables.at(idx));
   }
 
   if (get_metadata() < 0)
@@ -117,10 +137,19 @@ wxFrameBitmap::wxFrameBitmap(const wxString& title)
 
   }
 
-  if (get_tiles(0, 0, 0) < 0)
+  for (size_t idx_col = 0; idx_col < 2; idx_col++)
   {
+    for (size_t idx_row = 0; idx_row < 2; idx_row++)
+    {
+      wxLogDebug("tile %zd, %zd", idx_col, idx_row);
+      if (get_tiles(1, idx_col, idx_row) < 0)
+      {
 
+      }
+    }
   }
+
+
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -147,7 +176,8 @@ void wxFrameBitmap::OnAbout(wxCommandEvent& WXUNUSED(event))
 void wxFrameBitmap::OnPaint(wxPaintEvent& WXUNUSED(event))
 {
   wxPaintDC dc(this);
-  dc.DrawBitmap(m_bitmap, 0, 0, true);
+  tile_t tile = m_tiles.at(0);
+  dc.DrawBitmap(tile.bitmap, 0, 0, true);
 }
 
 
@@ -155,7 +185,7 @@ void wxFrameBitmap::OnPaint(wxPaintEvent& WXUNUSED(event))
 //wxFrameBitmap::get_tables
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int wxFrameBitmap::get_tables(const std::string &file_name, std::vector<std::string> &tables)
+int wxFrameBitmap::get_tables(const std::string &file_name)
 {
   sqlite3_stmt *stmt = 0;
 
@@ -176,7 +206,7 @@ int wxFrameBitmap::get_tables(const std::string &file_name, std::vector<std::str
   while (sqlite3_step(stmt) == SQLITE_ROW)
   {
     std::string table = (const char*)sqlite3_column_text(stmt, 0);
-    tables.push_back(table);
+    m_tables.push_back(table);
   }
 
   sqlite3_finalize(stmt);
@@ -246,9 +276,10 @@ int wxFrameBitmap::get_tiles(size_t zoom_level, size_t  tile_column, size_t tile
     const void *blob = sqlite3_column_blob(stmt, col);
     fwrite(blob, size_blob, 1, fp);
     fclose(fp);
-    m_bitmap = wxBitmap::NewFromPNGData(blob, size_blob);
-    const int w = m_bitmap.GetWidth();
-    const int h = m_bitmap.GetHeight();
+    tile_t tile(zoom_level, tile_column, tile_row, wxBitmap::NewFromPNGData(blob, size_blob));
+    m_tiles.push_back(tile);
+    const int w = tile.bitmap.GetWidth();
+    const int h = tile.bitmap.GetHeight();
   }
 
   sqlite3_finalize(stmt);
