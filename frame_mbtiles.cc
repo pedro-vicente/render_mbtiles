@@ -12,16 +12,28 @@
 class tile_t
 {
 public:
-  tile_t(size_t zoom_level_, size_t tile_column_, size_t tile_row_, wxBitmap bitmap_) :
-    zoom_level(zoom_level_),
+  tile_t(size_t tile_column_, size_t tile_row_, wxBitmap bitmap_) :
     tile_column(tile_column_),
     tile_row(tile_row_),
     bitmap(bitmap_)
   {}
-  size_t zoom_level;
   size_t tile_column;
   size_t tile_row;
   wxBitmap bitmap;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+//tile_level_t
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+class tile_level_t
+{
+public:
+  tile_level_t(size_t zoom_level_) :
+    zoom_level(zoom_level_)
+  {}
+  size_t zoom_level;
+  std::vector<tile_t> tiles;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -52,15 +64,14 @@ public:
   void OnAbout(wxCommandEvent& event);
   void OnPaint(wxPaintEvent& event);
 
-
-  int get_tiles(size_t zoom_level, size_t  tile_column, size_t tile_row);
+  int get_tiles(tile_level_t &tile_level, size_t  tile_column, size_t tile_row);
   int get_tables(const std::string &file_name);
   int get_metadata();
 
 private:
   sqlite3 *m_db;
   std::vector<std::string> m_tables;
-  std::vector<tile_t> m_tiles;
+  std::vector<tile_level_t> m_tiles;
 
 private:
   wxDECLARE_EVENT_TABLE();
@@ -137,19 +148,20 @@ wxFrameBitmap::wxFrameBitmap(const wxString& title)
 
   }
 
+  //load tile level zoom 1
+  tile_level_t tile_level(1);
   for (size_t idx_col = 0; idx_col < 2; idx_col++)
   {
     for (size_t idx_row = 0; idx_row < 2; idx_row++)
     {
       wxLogDebug("tile %zd, %zd", idx_col, idx_row);
-      if (get_tiles(1, idx_col, idx_row) < 0)
+      if (get_tiles(tile_level, idx_col, idx_row) < 0)
       {
 
       }
     }
   }
-
-
+  m_tiles.push_back(tile_level);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -175,6 +187,7 @@ void wxFrameBitmap::OnAbout(wxCommandEvent& WXUNUSED(event))
 
 void wxFrameBitmap::OnPaint(wxPaintEvent& WXUNUSED(event))
 {
+  tile_level_t tile_level = m_tiles.at(0);
   wxPaintDC dc(this);
   int x = 0, y = 0, w = 256, h = 256, idx = 0;
   for (size_t idx_col = 0; idx_col < 2; idx_col++)
@@ -182,7 +195,7 @@ void wxFrameBitmap::OnPaint(wxPaintEvent& WXUNUSED(event))
     y = 256;
     for (size_t idx_row = 0; idx_row < 2; idx_row++)
     {
-      tile_t tile = m_tiles.at(idx);
+      tile_t tile = tile_level.tiles.at(idx);
       idx++;
       dc.DrawBitmap(tile.bitmap, x, y, true);
       w = tile.bitmap.GetWidth();
@@ -191,9 +204,7 @@ void wxFrameBitmap::OnPaint(wxPaintEvent& WXUNUSED(event))
     }
     x += w;
   }
-
 }
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 //wxFrameBitmap::get_tables
@@ -258,12 +269,12 @@ int wxFrameBitmap::get_metadata()
 //wxFrameBitmap::get_tile
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int wxFrameBitmap::get_tiles(size_t zoom_level, size_t  tile_column, size_t tile_row)
+int wxFrameBitmap::get_tiles(tile_level_t &tile_level, size_t  tile_column, size_t tile_row)
 {
   sqlite3_stmt *stmt = 0;
   std::string sql = "SELECT tile_data FROM tiles WHERE ";
   sql += "zoom_level=";
-  sql += std::to_string(zoom_level);
+  sql += std::to_string(tile_level.zoom_level);
   sql += " AND tile_column=";
   sql += std::to_string(tile_column);
   sql += " AND tile_row=";
@@ -282,7 +293,7 @@ int wxFrameBitmap::get_tiles(size_t zoom_level, size_t  tile_column, size_t tile
     FILE *fp;
     int col = 0;
     char name[50];
-    snprintf(name, 20, "tile.%zd.%zd.%zd.png", zoom_level, tile_column, tile_row);
+    snprintf(name, 20, "tile.%zd.%zd.%zd.png", tile_level.zoom_level, tile_column, tile_row);
     if ((fp = fopen(name, "wb")) == NULL)
     {
     }
@@ -290,8 +301,8 @@ int wxFrameBitmap::get_tiles(size_t zoom_level, size_t  tile_column, size_t tile
     const void *blob = sqlite3_column_blob(stmt, col);
     fwrite(blob, size_blob, 1, fp);
     fclose(fp);
-    tile_t tile(zoom_level, tile_column, tile_row, wxBitmap::NewFromPNGData(blob, size_blob));
-    m_tiles.push_back(tile);
+    tile_t tile(tile_column, tile_row, wxBitmap::NewFromPNGData(blob, size_blob));
+    tile_level.tiles.push_back(tile);
   }
 
   sqlite3_finalize(stmt);
